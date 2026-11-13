@@ -1,5 +1,10 @@
 # VidQueue
 
+> **Want to install it?** Don't use the green **Code → Download ZIP** button: that's the source code,
+> and it can't be installed. Get **`VidQueue-<version>-windows.zip`** from
+> [the latest release](https://github.com/MY7H1CC0D3/vidqueue/releases/latest), right-click it >
+> **Extract All**, and run **Install VidQueue.bat** in the extracted folder.
+
 Queue videos from Firefox and download them with **no more than N at a time per site** (default 3).
 
 - **Firefox extension** (`extension/`) detects videos the way Video DownloadHelper does: it watches
