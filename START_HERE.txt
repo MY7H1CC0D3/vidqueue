@@ -1,0 +1,44 @@
+VidQueue - queue videos from Firefox, max 3 downloads per site
+================================================================
+
+1. Double-click "Install VidQueue.bat" (no admin rights needed).
+   Choose your options:
+     - Start with Windows: VidQueue keeps running in the background
+       (this always shows the tray icon so you can see and quit it)
+     - Show tray icon: optional otherwise
+     - Install the Firefox extension: Firefox opens and asks to add it -
+       click Add
+   Then click Install.
+
+2. That's it. Firefox starts VidQueue automatically when it's needed, the
+   same way Video DownloadHelper's companion app works. Without "Start with
+   Windows", VidQueue closes itself after Firefox exits, once any videos it
+   was finishing are saved.
+
+3. Open a video page. The VidQueue button shows a number when it finds a
+   video. Click it and choose "Queue best video". You can also right-click a
+   link > "VidQueue: queue video from this link". If the button isn't on the
+   toolbar, click the puzzle-piece icon > gear next to VidQueue > Pin to
+   Toolbar.
+
+Notes
+- Firefox must stay open while videos download (it does the downloading,
+  which is what gets past sites protected by Cloudflare). Downloads that
+  were interrupted continue the next time Firefox runs.
+- Downloads go to Downloads\VidQueue until you pick a folder in the
+  extension (popup > Default... or Settings). "This session..." picks a
+  folder only until Firefox is closed.
+- The dashboard (extension popup > Dashboard, or Start menu > VidQueue)
+  shows your queue. Its About window has the Start with Windows and tray
+  icon settings and a Quit button.
+- The extension updates itself; new versions of the app show a banner in
+  the dashboard.
+- Everything stays on your PC. Settings and the queue are kept in
+  %LOCALAPPDATA%\VidQueue.
+- Uninstall: Windows Settings > Apps > Installed apps > VidQueue. Remove the
+  extension in Firefox (Add-ons and themes).
+
+Windows may warn that the setup or app is from an unknown publisher (it
+isn't code-signed). Click "More info" > "Run anyway".
+
+See EULA.txt for the license terms.

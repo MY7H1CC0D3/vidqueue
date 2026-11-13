@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VidQueue</title>
+<link rel="icon" href="/icon.png">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#6b7385;--line:#e3e6ec;--acc:#2f6fed;--ok:#1f9d55;--err:#d64545;--warn:#c98a00}
+@media (prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1d2027;--fg:#e6e8ee;--mut:#8d94a5;--line:#2c313b;--acc:#5b8dff;--ok:#3cc47c;--err:#ff6b6b;--warn:#e0a82e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,Segoe UI,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0}
+h1{font-size:18px;margin:0 8px 0 0}
+.pill{padding:2px 9px;border-radius:99px;background:var(--bg);border:1px solid var(--line);color:var(--mut);font-size:12px}
+.sp{flex:1}
+button{font:inherit;padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+button:hover{border-color:var(--acc)}
+main{padding:16px 20px;max-width:1200px;margin:0 auto}
+.site{margin:0 0 18px}
+.site h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.job{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:grid;grid-template-columns:1fr auto;gap:4px 12px}
+.title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.meta{color:var(--mut);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acts{grid-row:span 2;display:flex;gap:6px;align-items:center}
+.bar{grid-column:1/-1;height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.s-done .bar i{background:var(--ok)} .s-error .bar i{background:var(--err)}
+.st{font-weight:600}
+.s-done .st{color:var(--ok)} .s-error .st{color:var(--err)} .s-queued .st{color:var(--mut)} .s-running .st{color:var(--acc)} .s-cancelled .st{color:var(--warn)}
+.err{grid-column:1/-1;color:var(--err);font-size:12px;word-break:break-word}
+.empty{color:var(--mut);text-align:center;padding:60px 0}
+#down{display:none;background:var(--err);color:#fff;padding:8px 20px}
+#upd{display:none;background:var(--acc);color:#fff;padding:8px 20px}
+#upd a{color:#fff;font-weight:600}
+h1{display:flex;align-items:center;gap:8px}
+h1 img{width:24px;height:24px}
+/* About (mirrors the JAVScout About window) */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10;align-items:center;justify-content:center;padding:16px}
+.modal.open{display:flex}
+.dlg{background:var(--card);border:1px solid var(--line);border-radius:10px;width:min(900px,100%);height:min(650px,100%);display:flex;flex-direction:column;overflow:hidden}
+.ahead{display:flex;gap:14px;align-items:center;padding:16px 18px}
+.ahead img{width:64px;height:64px}
+.ahead h2{font-size:22px;margin:0}
+.ahead .ln{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--mut)}
+.ahead .x{margin-left:auto;align-self:flex-start}
+.tabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--line)}
+.tabs button{border:1px solid transparent;border-bottom:0;border-radius:6px 6px 0 0;background:none}
+.tabs button.on{border-color:var(--line);background:var(--bg);font-weight:600}
+.tabp{display:none;flex:1;overflow:auto;padding:18px 20px}
+.dlg a{color:var(--acc)}
+.pre{white-space:pre-wrap}
+.tabp.on{display:block}
+.tabp .lead{font-size:15px;margin:0 0 14px}
+.tabp h3{font-size:14px;margin:0 0 3px}
+.tabp p{margin:0 0 14px}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;white-space:pre-wrap}
+#eula{white-space:pre-wrap;font-size:13px;line-height:1.5}
+@media (max-width:600px){header,main{padding-left:16px;padding-right:16px}.job{grid-template-columns:1fr}.acts{grid-row:auto}}
+</style>
+</head>
+<body>
+<div id="down">VidQueue app is not responding.</div>
+<div id="upd"></div>
+<header>
+  <h1><img src="/icon.png" alt="">VidQueue</h1>
+  <span class="pill" id="sum">…</span>
+  <span class="pill" id="lim"></span>
+  <span class="sp"></span>
+  <label class="pill"><input type="checkbox" id="hideDone"> hide finished</label>
+  <button id="clear">Clear finished</button>
+  <button id="aboutBtn">About</button>
+</header>
+<div class="modal" id="about" role="dialog" aria-modal="true" aria-label="About VidQueue">
+  <div class="dlg">
+    <div class="ahead">
+      <img src="/icon.png" alt="">
+      <div>
+        <h2 id="aTitle">VidQueue</h2>
+        <div class="ln"><span id="aVer"></span><button id="aCopyVer" title="Copy version">⧉</button></div>
+        <div class="ln" id="aCopy"></div>
+      </div>
+      <button class="x" id="aClose" title="Close">✕</button>
+    </div>
+    <div class="tabs">
+      <button data-t="tAbout" class="on">About</button><button data-t="tAuthors">Authors</button><button data-t="tLicense">License</button><button data-t="tSoftware">Software Used</button>
+    </div>
+    <div class="tabp on" id="tAbout"></div>
+    <div class="tabp" id="tAuthors"><h3>Publisher / project owner</h3><p id="aPub"></p><h3>Development assistance</h3><p>Anthropic Claude</p></div>
+    <div class="tabp" id="tLicense"><div id="eula"></div></div>
+    <div class="tabp" id="tSoftware"></div>
+  </div>
+</div>
+<main id="list"></main>
+<script>
+const H={'X-VidQueue':'1','Content-Type':'application/json'};
+const api=(p,b)=>fetch(p,{method:b===undefined?'GET':'POST',headers:H,body:b===undefined?undefined:JSON.stringify(b)}).then(r=>r.json());
+const fmtB=b=>{if(!b)return'';const u=['B','KB','MB','GB','TB'];let i=0;while(b>=1024&&i<4){b/=1024;i++}return b.toFixed(i>1?1:0)+' '+u[i]};
+const fmtT=s=>{if(s==null)return'';s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return(h?h+':'+String(m).padStart(2,'0'):m)+':'+String(x).padStart(2,'0')};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hide=document.getElementById('hideDone');
+try{hide.checked=localStorage.getItem('hideDone')==='1'}catch(e){}
+hide.onchange=()=>{try{localStorage.setItem('hideDone',hide.checked?'1':'0')}catch(e){};tick()};
+document.getElementById('clear').onclick=()=>api('/api/clear',{}).then(tick);
+const $=id=>document.getElementById(id);
+const copy=t=>navigator.clipboard&&navigator.clipboard.writeText(t);
+let about=null;
+async function openAbout(){
+  about=await api('/api/about');
+  const a=about, full=`${a.name} ${a.version} (${a.bits})`;
+  $('aTitle').textContent=full; $('aVer').textContent='Version: '+a.version; $('aCopy').textContent=a.copyright; $('aPub').textContent=a.publisher;
+  $('aCopyVer').onclick=()=>copy(`${full} | ${a.publisher}`);
+  const diag=`Application: ${a.app_dir}
+Data: ${a.data_dir}
+Python runtime: ${a.python}
+Windows: ${a.windows}`;
+  $('tAbout').innerHTML=`<p class="lead">${esc(a.description)}</p><div class="mono">${esc(diag)}</div>
+    <p style="margin-top:14px"><button id="aDiag">Copy Diagnostics</button></p>
+    <p><label><input type="checkbox" id="aAuto" ${a.autostart?'checked':''}> Start with Windows</label><br>
+       <label><input type="checkbox" id="aTray" ${a.tray?'checked':''} ${a.autostart?'disabled':''}> Show tray icon</label>
+       <span class="hint" id="aTrayHint" style="color:var(--mut);font-size:12px">${a.autostart?'(always on while VidQueue starts with Windows)':'(otherwise VidQueue runs hidden and closes itself after Firefox exits)'}</span></p>
+    <p><button id="aQuit">Quit VidQueue</button> <span style="color:var(--mut);font-size:12px">Firefox starts it again when needed.</span></p>
+    ${a.update?`<p>Update available: <a href="${esc(a.update.url)}" target="_blank" rel="noopener">VidQueue ${esc(a.update.latest)}</a></p>`:''}
+    <p><a href="${esc(a.repo)}" target="_blank" rel="noopener">${esc(a.repo)}</a></p>`;
+  $('aDiag').onclick=()=>copy(`${a.name} ${a.version}\n`+diag);
+  const syncBoxes=r=>{$('aAuto').checked=r.autostart;$('aTray').checked=r.tray;$('aTray').disabled=r.autostart;
+    $('aTrayHint').textContent=r.autostart?'(always on while VidQueue starts with Windows)':'(otherwise VidQueue runs hidden and closes itself after Firefox exits)'};
+  $('aAuto').onchange=e=>api('/api/autostart',{on:e.target.checked}).then(syncBoxes);
+  $('aTray').onchange=e=>api('/api/tray',{on:e.target.checked}).then(syncBoxes);
+  $('aQuit').onclick=()=>{if(confirm('Quit VidQueue? Downloads that need Firefox pause until it starts again.'))api('/api/quit',{}).then(()=>{document.body.innerHTML='<p style="padding:40px;text-align:center">VidQueue has quit. Firefox will start it again when you queue a video.</p>'})};
+  $('eula').textContent=a.eula;
+  const sw=a.software.map(x=>`${x.name}: ${x.version} (${x.license})`).join('\n');
+  $('tSoftware').innerHTML=`<p class="lead">VidQueue was built with the following software and libraries.</p><p style="text-align:right"><button id="aCopySw">Copy to clipboard</button></p><div class="pre">${esc(sw)}</div>`;
+  $('aCopySw').onclick=()=>copy(sw);
+  $('about').classList.add('open');
+}
+function closeAbout(){$('about').classList.remove('open');if(location.hash==='#about')history.replaceState(null,'',location.pathname)}
+$('aboutBtn').onclick=openAbout; $('aClose').onclick=closeAbout;
+$('about').onclick=e=>{if(e.target.id==='about')closeAbout()};
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeAbout()});
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button,.tabp').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');$(b.dataset.t).classList.add('on')});
+if(location.hash==='#about')openAbout();
+window.addEventListener('hashchange',()=>{if(location.hash==='#about')openAbout()});
+const order={running:0,queued:1,error:2,cancelled:3,done:4};
+async function act(id,a){await api(`/api/jobs/${id}/${a}`,{});tick()}
+window.act=act;
+async function tick(){
+  let d;
+  try{d=await api('/api/status');document.getElementById('down').style.display='none'}
+  catch(e){document.getElementById('down').style.display='block';return}
+  const s=d.settings, jobs=d.jobs;
+  const up=$('upd');
+  if(d.update){up.style.display='block';up.innerHTML=`VidQueue ${esc(d.update.latest)} is available. <a href="${esc(d.update.url)}" target="_blank" rel="noopener">Download it</a>`}else up.style.display='none';
+  const c=k=>jobs.filter(j=>j.status===k).length;
+  document.getElementById('sum').textContent=`${c('running')} downloading · ${c('queued')} queued · ${c('done')} done · ${c('error')} failed`;
+  document.getElementById("lim").textContent=`max ${s.per_site_limit}/site · ${s.global_limit} total · Firefox ${d.browser?"connected":"not connected"}`+(d.ffmpeg?"":" · ffmpeg missing!");
+  const shown=jobs.filter(j=>!(hide.checked&&(j.status==='done'||j.status==='cancelled')));
+  const bySite={};
+  for(const j of shown)(bySite[j.site]=bySite[j.site]||[]).push(j);
+  const list=document.getElementById('list');
+  if(!shown.length){list.innerHTML='<div class="empty">Nothing in the queue. Use the VidQueue button in Firefox to add videos.</div>';return}
+  list.innerHTML=Object.keys(bySite).sort().map(site=>{
+    const js=bySite[site].sort((a,b)=>order[a.status]-order[b.status]||(a.created-b.created));
+    const lim=(s.site_limits||{})[site]??s.per_site_limit;
+    const run=js.filter(j=>j.status==='running').length;
+    return `<section class="site"><h2>${esc(site)} <span class="pill">${run}/${lim} active</span></h2>`+js.map(j=>{
+      const pct=Math.round((j.progress||0)*100);
+      let st=j.status;
+      if(st==='running')st=j.phase==='processing'?'merging':`${pct}%`;
+      if(st==='queued'&&j.next_try&&j.next_try*1000>Date.now())st=`retry in ${Math.ceil(j.next_try-Date.now()/1000)}s`;
+      else if(st==='queued'&&j.phase)st=j.phase;
+      const bits=[];
+      if(j.status==='running'&&j.phase!=='processing'){if(j.downloaded)bits.push(fmtB(j.downloaded)+(j.total?' / ~'+fmtB(j.total):''));if(j.speed)bits.push(fmtB(j.speed)+'/s');if(j.eta!=null)bits.push('ETA '+fmtT(j.eta))}
+      if(j.height)bits.push(j.height+'p');
+      if(j.method)bits.push(j.method);
+      bits.push(j.filename||j.dir);
+      const acts=[];
+      if(j.status==='queued')acts.push(`<button onclick="act('${j.id}','top')">Next</button>`);
+      if(j.status==='running'||j.status==='queued')acts.push(`<button onclick="act('${j.id}','cancel')">Cancel</button>`);
+      if(j.status==='error'||j.status==='cancelled')acts.push(`<button onclick="act('${j.id}','retry')">Retry</button>`);
+      acts.push(`<button onclick="act('${j.id}','open')">Folder</button>`);
+      if(j.status!=='running')acts.push(`<button onclick="act('${j.id}','remove')" title="Remove from list">✕</button>`);
+      return `<div class="job s-${j.status}"><div class="title" title="${esc(j.title)}"><span class="st">${esc(st)}</span> · ${esc(j.title||j.page_url||j.media_url)}</div>
+        <div class="acts">${acts.join('')}</div>
+        <div class="meta" title="${esc(j.page_url)}">${esc(bits.join(' · '))}</div>
+        <div class="bar"><i style="width:${j.status==='done'?100:pct}%"></i></div>
+        ${j.error&&j.status!=='done'?`<div class="err">${esc(j.error)}</div>`:''}</div>`}).join('')+'</section>'}).join('');
+}
+tick();setInterval(tick,1000);
+</script>
+</body>
+</html>

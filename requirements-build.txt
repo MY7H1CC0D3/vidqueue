@@ -1,0 +1,6 @@
+# Exact versions used for the prebuilt Windows release (build_release.ps1).
+yt-dlp==2026.10.26
+pystray==0.19.5
+Pillow==13.0.0
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7

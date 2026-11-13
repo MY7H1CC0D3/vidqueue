@@ -1,0 +1,69 @@
+{
+  "manifest_version": 2,
+  "name": "VidQueue",
+  "version": "1.2.0",
+  "description": "Detects videos on web pages and sends them to the local VidQueue app, which downloads them with a per-site concurrency limit.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vidqueue@local.ext",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      },
+      "update_url": "https://github.com/MY7H1CC0D3/vidqueue/releases/latest/download/updates.json"
+    }
+  },
+  "permissions": [
+    "<all_urls>",
+    "webRequest",
+    "webRequestBlocking",
+    "tabs",
+    "storage",
+    "cookies",
+    "menus",
+    "notifications",
+    "nativeMessaging",
+    "http://127.0.0.1:9666/*"
+  ],
+  "background": {
+    "scripts": [
+      "common.js",
+      "background.js",
+      "downloader.js"
+    ],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    },
+    "default_title": "VidQueue",
+    "default_area": "navbar"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "common.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "homepage_url": "https://github.com/MY7H1CC0D3/vidqueue"
+}

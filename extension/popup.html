@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <strong>VidQueue</strong>
+    <span id="app" class="pill">…</span>
+    <span class="sp"></span>
+    <button id="startApp" hidden>Start VidQueue</button>
+    <a href="#" id="dash">Dashboard</a>
+  </header>
+
+  <section class="folder">
+    <div class="lbl">Save to <span id="scope" class="tag"></span></div>
+    <div id="dir" class="path"></div>
+    <div class="row">
+      <button id="pickSession" title="Use a different folder until Firefox is closed">This session…</button>
+      <button id="pickDefault" title="Change the folder used by default">Default…</button>
+      <button id="resetSession" hidden>Back to default</button>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl row"><span>Detected on this page <span id="count"></span></span><span class="sp"></span><a href="#" id="rescan">Rescan</a></div>
+    <button id="queueBest" class="primary" disabled>Queue best video</button>
+    <div id="items"></div>
+    <label id="showHiddenWrap" class="small" hidden><input type="checkbox" id="showHidden"> show <span id="hiddenCount"></span> filtered (ads, previews, quality variants)</label>
+    <div class="small"><a href="#" id="queuePage">Send page link instead</a> (for sites yt-dlp supports directly)</div>
+  </section>
+
+  <div id="msg"></div>
+  <footer><a href="#" id="opts">Settings</a><span class="sp"></span><a href="#" id="about">About</a></footer>
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

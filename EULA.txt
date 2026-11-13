@@ -1,0 +1,49 @@
+VidQueue END USER LICENSE AGREEMENT
+Version 1.0 - November 2026
+Copyright © 2026 Cannon Technologies. All rights reserved.
+
+IMPORTANT: This End User License Agreement ("Agreement") governs use of VidQueue, including the VidQueue application and the VidQueue Firefox extension ("Software"). By installing, copying, or using the Software, you agree to these terms.
+
+1. LICENSE GRANT
+Cannon Technologies grants you a limited, non-exclusive, non-transferable license to install and use the Software for personal use. The Software is licensed, not sold.
+
+2. OWNERSHIP
+The Software, its original code, branding, documentation, and other original materials remain the property of Cannon Technologies. Third-party components remain subject to their respective licenses.
+
+3. RESTRICTIONS
+Except where applicable law expressly permits otherwise, you may not sell, sublicense, rent, commercially redistribute, or represent the Software as your own product without written permission from Cannon Technologies. You may not remove proprietary notices. Reverse engineering is prohibited only to the extent such restriction is permitted by applicable law.
+
+4. DOWNLOADED CONTENT
+VidQueue downloads media from websites you choose to visit, using your own browser session. You are solely responsible for ensuring that you have the right to download and keep any content, and for complying with the terms of the websites you use and with the laws that apply to you. Cannon Technologies does not host, provide, select, or endorse any content.
+
+5. THIRD-PARTY SERVICES AND CONTENT
+The Software interacts with third-party websites and services. Those services and materials are governed by their own terms, availability, and rights. Cannon Technologies does not control or guarantee third-party services, and websites may change in ways that stop the Software from working.
+
+6. PRIVACY
+The Software runs on your computer. Download jobs, settings, and the browser cookies needed to download a video are stored locally and are not sent to Cannon Technologies. The application may contact GitHub to check whether a newer version is available; this can be turned off in Settings.
+
+7. UPDATES
+Cannon Technologies may provide updates, patches, or replacement versions. The Firefox extension may update itself automatically. Updates may modify or discontinue features. Unless accompanied by different terms, this Agreement also applies to updates.
+
+8. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND TO THE MAXIMUM EXTENT PERMITTED BY LAW. USE OF THE SOFTWARE IS AT YOUR OWN RISK.
+
+9. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, CANNON TECHNOLOGIES WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR EXEMPLARY DAMAGES, OR FOR LOSS OF DATA, PROFITS, OR BUSINESS ARISING FROM USE OF OR INABILITY TO USE THE SOFTWARE.
+
+10. TERMINATION
+This license terminates if you materially violate this Agreement. Upon termination, you must stop using the Software and remove copies in your possession, except for backups retained as required by law.
+
+11. GOVERNING LAW
+This Agreement is intended to be interpreted under applicable United States law and the law of the state in which Cannon Technologies is established, without overriding mandatory consumer protections that apply to you.
+
+12. THIRD-PARTY NOTICES
+The Windows package includes FFmpeg (https://ffmpeg.org), licensed under the GNU General Public License version 3; its license is included in the ffmpeg folder and its source code is available from ffmpeg.org and from the build's publisher (https://www.gyan.dev/ffmpeg/builds/). It also includes yt-dlp (Unlicense), Python (PSF License), Tcl/Tk, pystray (LGPLv3), and Pillow (HPND). See About > Software Used.
+
+13. CHANGES TO THESE TERMS
+Future Software releases may include a revised Agreement. A revised Agreement applies when accepted or when use of a later release is expressly conditioned on the revised terms.
+
+14. ENTIRE AGREEMENT
+This Agreement and applicable third-party license notices constitute the agreement governing use of this Software unless Cannon Technologies provides separate written terms.
+
+This is an early project license intended for private and limited distribution and may be revised before any public release.
