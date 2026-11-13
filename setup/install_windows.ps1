@@ -186,14 +186,22 @@ $btnInstall.Add_Click({
 
         Set-Step 'Copying files...' 20
         New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-        $keep = @('vidqueue-native.json', 'uninstall_windows.ps1', 'EULA.txt', 'vidqueue.ico', 'vidqueue.png')
-        & robocopy.exe $appSrc $installDir /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS /NP /XF @keep /XF 'vidqueue-*.xpi' | Out-Null
+        # No /XF here: robocopy matches excluded names at every depth, so excluding
+        # the root's EULA.txt/vidqueue.png also dropped _internal\EULA.txt and
+        # _internal\assets\vidqueue.png (the dashboard/About picture). /MIR purges the
+        # root-only files below, and they are all written again straight after.
+        & robocopy.exe $appSrc $installDir /MIR /R:3 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying the program files failed (robocopy exit code $LASTEXITCODE)." }
         Copy-Item -LiteralPath (Join-Path $setupDir 'uninstall_windows.ps1') -Destination $installDir -Force
         Copy-Item -LiteralPath (Join-Path $setupDir 'vidqueue.ico') -Destination $installDir -Force
         Copy-Item -LiteralPath (Join-Path $pkg 'EULA.txt') -Destination $installDir -Force
         Get-ChildItem -LiteralPath $installDir -Filter 'vidqueue-*.xpi' | Remove-Item -Force
         if ($xpi) { Copy-Item -LiteralPath $xpi.FullName -Destination $installDir -Force }
+        # A zip downloaded from the internet marks every extracted file as
+        # "from the internet" (Zone.Identifier stream), which can make Windows
+        # warn again when Firefox starts VidQueue. The user already chose to
+        # install it, so clear the mark on the installed copy.
+        Get-ChildItem -LiteralPath $installDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
         $exe = Join-Path $installDir $exeName
 
         Set-Step 'Registering VidQueue with Firefox...' 55
