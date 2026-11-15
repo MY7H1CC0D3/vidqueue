@@ -37,7 +37,7 @@ Downloads that Firefox does (Cloudflare sites) pause when Firefox exits and resu
 Start with Windows and the tray icon can be changed later in the dashboard's **About**.
 
 **From source (development):** `run.bat` starts the app, `stop.bat` stops it.
-`.venv\Scripts\python.exe appidqueue.py --register-native` registers the source checkout as the
+`.venv\Scripts\python.exe app\vidqueue.py --register-native` registers the source checkout as the
 Firefox launcher. Load `extension\manifest.json` as a temporary add-on via `about:debugging`.
 
 ## Using it
@@ -45,6 +45,20 @@ Firefox launcher. Load `extension\manifest.json` as a temporary add-on via `abou
 - **Toolbar button:** the badge shows how many videos were detected on the page. Click it to see them
   (quality, length, number of qualities), then **Queue best video** or queue a specific one.
   *Show filtered* reveals ads, previews and individual quality variants that were hidden.
+  Each entry has a **preview** of the player it belongs to (a frame from the video, or its poster),
+  so you can tell the main video from others on the page, such as clips in replies on X.
+  Hover an entry to outline its player on the page; click the preview to scroll to it.
+  **Queue best video** takes the video you're watching (playing on screen). If nothing is playing,
+  it takes the longest, highest-quality stream. Short clips under the length filter stay listed
+  when they clearly belong to a real player on the page (X posts).
+  **Instagram and Facebook:** on a post or video page (Instagram `/p/`, `/reel/`, the reels
+  scroller and posts opened from the feed; Facebook `/watch/?v=`, `/reel/` and `/<page>/videos/`)
+  the entry is the post itself, queued from its page URL through yt-dlp's Instagram or Facebook
+  extractor with your Firefox cookies, so it arrives with audio at the best quality. If the extractor
+  fails, the app falls back to the CDN stream matched to the player on screen. The preview is the
+  player playing on screen. The raw CDN streams (video-only/audio-only tracks, often preloads of
+  *other* videos) are folded under *Show filtered*. On the Facebook feed itself (no video URL),
+  open the video first.
 - **Right-click a link → "queue video from this link":** opens the page in a muted background tab,
   grabs the video, closes the tab. Works from search/actress/list pages.
 - **Select part of a list page → right-click → "queue all video links in selection":** queues every
@@ -111,13 +125,24 @@ bootloader compiled locally, smoke test, Defender scan):
 
 Release steps:
 1. Bump the version in `app/vidqueue.py`, `extension/manifest.json` and `version_info.txt`; commit.
-2. `build_exe.bat`, then sign `distidqueue-extension-<v>.zip` on AMO and save the signed file as
-   `distidqueue-<v>.xpi`.
+2. `build_exe.bat`, then sign `dist\vidqueue-extension-<v>.zip` on AMO and save the signed file as
+   `dist\vidqueue-<v>.xpi`.
 3. `build_exe.bat` again so the package includes the `.xpi`.
 4. On GitHub (`MY7H1CC0D3/vidqueue`), create release **`v<version>`** and upload
    `VidQueue-<v>-windows.zip`, `vidqueue-<v>.xpi` and `updates.json`.
    The extension's `update_url` points at `releases/latest/download/updates.json`, and the app shows
    an "update available" banner when the latest release tag is newer than itself.
+   Keep the zip's SHA-256 in the release notes (a line like SHA-256 (zip): `<hash>`) as a fallback: the
+   one-click update verifies the download against GitHub's asset digest, else that line, and won't
+   install without one of them.
+
+**One-click update:** the dashboard banner and About > **Check for updates** offer **Update now**
+when a newer release exists. VidQueue downloads `VidQueue-<v>-windows.zip` from the GitHub release,
+checks its SHA-256, extracts it to `%LOCALAPPDATA%\VidQueue\update` and runs its
+`setup\install_windows.ps1 -Update`. The installer closes VidQueue, installs the new files with the
+same choices (start with Windows, tray), leaves the Firefox extension to Firefox's own updates and
+starts VidQueue again; the dashboard reloads when the new version answers. Downloads that were
+running carry on afterwards. Running from source, the button isn't offered (update with git).
 
 The packaged app keeps its data in `%LOCALAPPDATA%\VidQueue`; running from source keeps it in `data\`.
 Tray menu: Open dashboard, Start at login, About, Quit. About is also in the dashboard header.

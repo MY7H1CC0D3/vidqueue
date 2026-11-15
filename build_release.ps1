@@ -235,14 +235,24 @@ if (Test-Path $signedXpi) {
 $exeHash = (Get-FileHash -LiteralPath (Join-Path $pkg 'app\VidQueue.exe') -Algorithm SHA256).Hash.ToLower()
 $freeze = (& $buildPython -m pip freeze --disable-pip-version-check) -join "`r`n"
 $pyVersion = (& $buildPython -c "import sys; print(sys.version)").Trim()
+# The package is public: no build-PC paths, user name or computer name in it
+function Hide-LocalPaths([string]$text) {
+    foreach ($p in @($root, $env:USERPROFILE, $env:LOCALAPPDATA)) {
+        if (-not $p) { continue }
+        foreach ($form in @($p, $p.Replace('\', '\\'), $p.Replace('\', '/'))) {
+            $text = [regex]::Replace($text, [regex]::Escape($form), '<build>', 'IgnoreCase')
+        }
+    }
+    return $text
+}
 $buildManifest = @(
     "VidQueue $version",
-    "Built      $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')) on $env:COMPUTERNAME",
+    "Built      $((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz'))",
     "Commit     $commit$(if ($dirty) { ' (with uncommitted changes)' })",
     "Python     $pyVersion",
     "VidQueue.exe SHA-256 $exeHash",
     "Bootloader $bootloader",
-    "FFmpeg     $($smoke.checks.ffmpeg.detail) from $FfmpegDir",
+    "FFmpeg     $($smoke.checks.ffmpeg.detail)",
     "Extension  $xpiNote",
     "Defender   $defender",
     '',
@@ -252,10 +262,22 @@ $buildManifest = @(
     'Smoke test:',
     $reportText
 ) -join "`r`n"
-[System.IO.File]::WriteAllText((Join-Path $pkg 'BUILD-MANIFEST.txt'), $buildManifest, $utf8)
+[System.IO.File]::WriteAllText((Join-Path $pkg 'BUILD-MANIFEST.txt'), (Hide-LocalPaths $buildManifest), $utf8)
+
+Step 'Checking the package for build-PC paths and names'
+$leakWords = @($root, $env:USERPROFILE, $env:USERNAME, $env:COMPUTERNAME) | Where-Object { $_ -and $_.Length -ge 3 }
+$leakForms = foreach ($w in $leakWords) { $w; $w.Replace('\', '\\'); $w.Replace('\', '/') }
+$leakRx = [regex]((($leakForms | Select-Object -Unique) | ForEach-Object { [regex]::Escape($_) }) -join '|')
+$leakRx = [regex]::new($leakRx.ToString(), 'IgnoreCase')
+$latin1 = [Text.Encoding]::GetEncoding(28591)
+$leaks = Get-ChildItem -LiteralPath $pkg -Recurse -File | Where-Object { $_.FullName -notlike "*\app\ffmpeg\*" } | Where-Object {
+    $b = [IO.File]::ReadAllBytes($_.FullName)
+    $leakRx.IsMatch($latin1.GetString($b)) -or $leakRx.IsMatch([Text.Encoding]::Unicode.GetString($b))
+}
+if ($leaks) { throw "These package files contain build-PC paths or names:`n$(($leaks.FullName) -join "`n")" }
 
 Step "Zipping $name.zip"
-New-Zip $pkg $zip "$name/"
+New-Zip $pkg $zip   # files at the zip root: Extract All already makes the VidQueue-<v>-windows folder
 $zipHash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
 [System.IO.File]::WriteAllText("$zip.sha256", "$zipHash  $name.zip`n", $utf8)
 

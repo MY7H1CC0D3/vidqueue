@@ -10,12 +10,18 @@ companion app) so the extension can start it, and offers:
 
 Silent use (tests / scripted installs):
   install_windows.ps1 -AutoInstall [-StartWithWindows] [-Tray] [-NoExtension]
+
+One-click update (started by VidQueue itself from the dashboard):
+  install_windows.ps1 -Update
+  runs without asking, keeps the current choices, leaves the Firefox extension
+  alone (Firefox updates it) and starts VidQueue again afterwards.
 #>
 param(
     [switch]$AutoInstall,
     [switch]$StartWithWindows,
     [switch]$Tray,
     [switch]$NoExtension,
+    [switch]$Update,
     [string]$Screenshot = ''   # test aid: render the window to a PNG and exit
 )
 $ErrorActionPreference = 'Stop'
@@ -59,7 +65,7 @@ $installed = Test-Path -LiteralPath (Join-Path $installDir $exeName)
 
 # ------------------------------------------------------------------ UI
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'VidQueue Setup'
+$form.Text = $(if ($Update) { 'Updating VidQueue' } else { 'VidQueue Setup' })
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object System.Drawing.Size(620, 430)
 $form.FormBorderStyle = 'FixedDialog'
@@ -143,6 +149,7 @@ function Sync-Tray {
 $chkAuto.Add_CheckedChanged({ Sync-Tray })
 if ($AutoInstall) { $chkAuto.Checked = [bool]$StartWithWindows; $chkTray.Checked = [bool]$Tray; if ($NoExtension) { $chkExt.Checked = $false } }
 else { $chkAuto.Checked = $prevAuto; $chkTray.Checked = ($prevTray -or $prevAuto) }
+if ($Update) { $chkExt.Checked = $false }
 Sync-Tray
 
 function Set-Step($text, $value) {
@@ -241,6 +248,10 @@ $btnInstall.Add_Click({
         if ($wantAuto) {
             Set-Step 'Starting VidQueue...' 92
             Start-Process -FilePath $exe -ArgumentList '--autostart' -WorkingDirectory $installDir
+        } elseif ($Update) {
+            # the dashboard that asked for the update reconnects by itself, so don't open another
+            Set-Step 'Starting VidQueue...' 92
+            Start-Process -FilePath $exe -ArgumentList '--no-open' -WorkingDirectory $installDir
         }
         $extNote = ''
         if ($chkExt.Checked -and $xpi) {
@@ -257,7 +268,7 @@ $btnInstall.Add_Click({
         Set-Step 'Done.' 100
         $script:done = $true
         $how = if ($wantAuto) { 'VidQueue is running and will start with Windows.' } else { 'Firefox will start VidQueue automatically when it is needed.' }
-        if (-not $AutoInstall) {
+        if (-not $AutoInstall -and -not $Update) {
             [System.Windows.Forms.MessageBox]::Show($form, "VidQueue $version is installed.`r`n`r`n$how$extNote", 'VidQueue Setup', 'OK', 'Information') | Out-Null
         }
         $form.Close()
@@ -269,7 +280,7 @@ $btnInstall.Add_Click({
     }
 })
 
-if ($AutoInstall) { $form.Add_Shown({ $form.BeginInvoke([System.Windows.Forms.MethodInvoker]{ $btnInstall.PerformClick() }) | Out-Null }) }
+if ($AutoInstall -or $Update) { $form.Add_Shown({ $form.BeginInvoke([System.Windows.Forms.MethodInvoker]{ $btnInstall.PerformClick() }) | Out-Null }) }
 if ($Screenshot) {
     $form.Opacity = 0
     $form.Add_Shown({

@@ -36,6 +36,20 @@ function vqSite(url) {
 const VQ_MEDIA_EXT = /\.(mp4|webm|mkv|flv|mov|m4v|avi|wmv)$/i;
 const VQ_SKIP_EXT = /\.(ts|m4s|aac|m4a|mp3|vtt|srt|key|jpe?g|png|gif|webp|svg|js|css|html?)$/i;
 
+/** One URL per file: drop byte-range query params (Instagram/Facebook CDNs fetch
+ *  a file as many ?bytestart=&byteend= pieces; without them the whole file comes back). */
+function vqNormUrl(url) {
+  if (!/[?&]byte(?:start|end)=/.test(url)) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("bytestart");
+    u.searchParams.delete("byteend");
+    return u.href;
+  } catch (e) {
+    return url;
+  }
+}
+
 /** Returns "hls" | "dash" | "direct" | null for a URL + content-type. */
 function vqClassify(url, contentType) {
   const ct = (contentType || "").toLowerCase().split(";")[0].trim();
@@ -48,6 +62,7 @@ function vqClassify(url, contentType) {
     return null;
   }
   if (ct.startsWith("text/html") || ct.startsWith("image/")) return null;
+  if (path.endsWith("/dash_mpd_debug.mpd")) return null; // Facebook-internal, not a real manifest
   if (ct.includes("mpegurl") || path.endsWith(".m3u8")) return "hls";
   if (ct === "application/dash+xml" || path.endsWith(".mpd")) return "dash";
   if (ct === "video/mp2t" || ct === "video/iso.segment" || VQ_SKIP_EXT.test(path)) return null;

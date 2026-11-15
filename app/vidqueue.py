@@ -24,10 +24,10 @@ from pathlib import Path
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 PUBLISHER = "Cannon Technologies"
 GITHUB_REPO = "MY7H1CC0D3/vidqueue"
-HOST, PORT = "127.0.0.1", 9666
+HOST, PORT = "127.0.0.1", int(os.environ.get("VIDQUEUE_PORT") or 9666)  # port override for tests
 FROZEN = bool(getattr(sys, "frozen", False))
 if FROZEN:
     # packaged VidQueue.exe: resources inside the bundle, data per user
@@ -809,6 +809,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "ffmpeg": bool(FFMPEG),
                     "browser": browser_connected(),
                     "update": update_public(),
+                    "can_update": FROZEN or UPDATE_TEST,
                     "settings": settings,
                     "jobs": [public(j) for j in jobs],
                 })
@@ -881,6 +882,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if path == "/api/tray":
                 set_tray(bool(body.get("on")))
                 return self._send(200, {"autostart": autostart_enabled(), "tray": tray_wanted()})
+            if path == "/api/update/check":
+                err = check_update()
+                return self._send(200, {"current": VERSION, "error": err, "update": update_public(),
+                                        "can_install": FROZEN or UPDATE_TEST})
+            if path == "/api/update/install":
+                err = start_update()
+                return self._send(400 if err else 200, {"error": err} if err else {"ok": True, "update": update_public()})
             if path == "/api/quit":
                 threading.Timer(0.5, quit_event.set).start()
                 return self._send(200, {"ok": True})
@@ -1020,13 +1028,23 @@ def about_info():
         "python": platform.python_version(), "windows": platform.platform(),
         "packaged": FROZEN, "repo": f"https://github.com/{GITHUB_REPO}",
         "autostart": autostart_enabled(), "tray": tray_wanted(), "launch": LAUNCH,
-        "native_host": NATIVE_HOST, "update": update_public(),
+        "native_host": NATIVE_HOST, "update": update_public(), "can_update": FROZEN or UPDATE_TEST,
         "software": software_used(), "eula": eula,
     }
 
 
-# --- update check (GitHub releases; silently does nothing until a release exists)
-update_info = {"latest": None, "url": None}
+# --- updates (GitHub releases) -----------------------------------------
+# The check runs at start, every 6 hours and on demand (About > Check for
+# updates). "Update now" downloads the release zip, verifies its SHA-256 (the
+# asset digest GitHub publishes, else the hash in the release notes), extracts
+# it and hands over to its installer in update mode, which closes VidQueue,
+# installs the new files with the same choices and starts VidQueue again.
+UPDATE_API = os.environ.get("VIDQUEUE_UPDATE_API") or f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+UPDATE_TEST = bool(os.environ.get("VIDQUEUE_UPDATE_API"))  # test server: any asset host, also from source
+UPDATE_DRYRUN = bool(os.environ.get("VIDQUEUE_UPDATE_DRYRUN"))  # tests: stop before launching the installer
+update_info = {"latest": None, "url": None, "asset": None, "size": 0, "sha256": None, "checked": None}
+update_state = {"phase": None, "progress": 0.0, "error": None}  # downloading / verifying / installing / error
+update_lock = threading.Lock()
 
 
 def ver_tuple(v):
@@ -1034,27 +1052,121 @@ def ver_tuple(v):
 
 
 def update_public():
-    return dict(update_info) if update_info["latest"] else None
+    return dict(update_info, state=dict(update_state)) if update_info["latest"] else None
+
+
+def check_update():
+    """Ask GitHub for the latest release. Returns an error string, or None."""
+    import urllib.request
+    try:
+        req = urllib.request.Request(UPDATE_API, headers={
+            "User-Agent": f"VidQueue/{VERSION}", "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            d = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        update_info["checked"] = time.time()
+        return f"couldn't reach GitHub ({e})"
+    update_info["checked"] = time.time()
+    tag = (d.get("tag_name") or "").lstrip("vV")
+    if ver_tuple(tag) <= ver_tuple(VERSION):
+        update_info.update(latest=None, url=None, asset=None, size=0, sha256=None)
+        return None
+    name = f"VidQueue-{tag}-windows.zip"
+    asset = next((a for a in d.get("assets") or [] if a.get("name") == name), None)
+    sha = None
+    if asset and str(asset.get("digest") or "").startswith("sha256:"):
+        sha = asset["digest"].split(":", 1)[1].lower()
+    if not sha:  # release notes: SHA-256 (zip): `<hash>`
+        m = re.search(r"SHA-?256[^`\n]*`([0-9a-fA-F]{64})`", d.get("body") or "")
+        sha = m.group(1).lower() if m else None
+    update_info.update(latest=tag, url=d.get("html_url"), asset=asset and asset.get("browser_download_url"),
+                       size=(asset or {}).get("size") or 0, sha256=sha)
+    return None
 
 
 def update_loop():
-    import urllib.request
     while True:
         if settings.get("check_updates", True):
-            try:
-                req = urllib.request.Request(
-                    f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-                    headers={"User-Agent": f"VidQueue/{VERSION}", "Accept": "application/vnd.github+json"})
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    d = json.loads(r.read().decode("utf-8"))
-                tag = (d.get("tag_name") or "").lstrip("vV")
-                if ver_tuple(tag) > ver_tuple(VERSION):
-                    update_info.update(latest=tag, url=d.get("html_url"))
-                else:
-                    update_info.update(latest=None, url=None)
-            except Exception:
-                pass  # offline, rate-limited, or no release yet
+            check_update()
         time.sleep(6 * 3600)
+
+
+def start_update():
+    """Begin a one-click update in the background. Returns an error string, or None."""
+    if not FROZEN and not UPDATE_TEST:
+        return "VidQueue is running from source: update it with git instead."
+    if not update_info["latest"]:
+        return "VidQueue is up to date."
+    if not update_info["asset"]:
+        return f"Release {update_info['latest']} has no Windows package to install."
+    if not update_info["sha256"]:
+        return f"Release {update_info['latest']} has no SHA-256 to verify the download against."
+    if not UPDATE_TEST and not update_info["asset"].startswith(f"https://github.com/{GITHUB_REPO}/releases/download/"):
+        return "The update package isn't on VidQueue's GitHub releases page."
+    with update_lock:
+        phase = update_state["phase"]
+        # "installing" means the installer should close VidQueue any moment; if it
+        # hasn't after 2 minutes (it failed before getting that far), allow a retry
+        stuck = phase == "installing" and (UPDATE_DRYRUN or time.time() - update_state.get("at", 0) > 120)
+        if phase in ("downloading", "verifying", "installing") and not stuck:
+            return None  # already on its way
+        update_state.update(phase="downloading", progress=0.0, error=None)
+    threading.Thread(target=run_update, args=(dict(update_info),), daemon=True).start()
+    return None
+
+
+def run_update(info):
+    import hashlib
+    import urllib.request
+    import zipfile
+    work = DATA / "update"
+    try:
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True, exist_ok=True)
+        zpath = work / f"VidQueue-{info['latest']}-windows.zip"
+        h = hashlib.sha256()
+        req = urllib.request.Request(info["asset"], headers={"User-Agent": f"VidQueue/{VERSION}"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(zpath, "wb") as f:
+            total = int(r.headers.get("Content-Length") or info.get("size") or 0)
+            done = 0
+            while True:
+                chunk = r.read(1 << 20)
+                if not chunk:
+                    break
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                if total:
+                    update_state["progress"] = min(done / total, 1.0)
+        update_state.update(phase="verifying", progress=1.0)
+        if h.hexdigest() != info["sha256"]:
+            raise RuntimeError("the download doesn't match the published SHA-256, so it wasn't installed")
+        pkg = work / f"VidQueue-{info['latest']}-windows"
+        with zipfile.ZipFile(zpath) as z:
+            z.extractall(pkg)  # zipfile drops absolute and ".." parts of entry names
+        installer = pkg / "setup" / "install_windows.ps1"
+        if not installer.is_file() or not (pkg / "app" / "VidQueue.exe").is_file():
+            raise RuntimeError("the update package is incomplete")
+        zpath.unlink(missing_ok=True)
+        update_state.update(phase="installing", at=time.time())
+        log.info("update %s -> %s: starting the installer", VERSION, info["latest"])
+        if UPDATE_DRYRUN:
+            return
+        # the installer closes this process, so it must not belong to this process's job
+        cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+               "-File", str(installer), "-Update"]
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP. Not DETACHED_PROCESS: Windows
+        # PowerShell 5.1 without a console exits at once (code 0) and does nothing.
+        flags = 0x08000000 | 0x00000200
+        # the installer starts the new VidQueue: don't hand it test overrides (data folder, port)
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("VIDQUEUE_")}
+        try:
+            subprocess.Popen(cmd, cwd=str(pkg), env=env, creationflags=flags | 0x01000000)  # + CREATE_BREAKAWAY_FROM_JOB
+        except OSError:
+            subprocess.Popen(cmd, cwd=str(pkg), env=env, creationflags=flags)
+    except Exception as e:
+        log.warning("update failed: %s", e)
+        update_state.update(phase="error", error=str(e))
 
 
 # --- launch modes & lifetime -------------------------------------------
@@ -1433,6 +1545,7 @@ def main():
                 j["phase"] = None
                 j["delivered_at"] = None
     jobs.extend(loaded)
+    shutil.rmtree(DATA / "update", ignore_errors=True)  # leftovers of a finished one-click update
     if autostart_enabled():
         settings["tray"] = True
     save_settings()
@@ -1444,7 +1557,7 @@ def main():
     threading.Thread(target=idle_watch, daemon=True).start()
     threading.Thread(target=tray.refresh_loop, daemon=True).start()
     tray.apply()
-    if LAUNCH == "manual" and FROZEN:
+    if LAUNCH == "manual" and FROZEN and "--no-open" not in sys.argv:  # --no-open: restarted by an update
         open_dashboard()
     print(f"VidQueue {VERSION} running at http://{HOST}:{PORT}/  ({LAUNCH} launch, ffmpeg: {FFMPEG or 'NOT FOUND'})")
     try:

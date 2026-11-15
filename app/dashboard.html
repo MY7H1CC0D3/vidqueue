@@ -33,6 +33,8 @@ main{padding:16px 20px;max-width:1200px;margin:0 auto}
 #down{display:none;background:var(--err);color:#fff;padding:8px 20px}
 #upd{display:none;background:var(--acc);color:#fff;padding:8px 20px}
 #upd a{color:#fff;font-weight:600}
+#upd button{margin:0 8px;padding:3px 10px}
+#upd .uerr{display:block;margin-top:4px;font-size:12px}
 h1{display:flex;align-items:center;gap:8px}
 h1 img{width:24px;height:24px}
 /* About (mirrors the JAVScout About window) */
@@ -120,9 +122,20 @@ Windows: ${a.windows}`;
        <label><input type="checkbox" id="aTray" ${a.tray?'checked':''} ${a.autostart?'disabled':''}> Show tray icon</label>
        <span class="hint" id="aTrayHint" style="color:var(--mut);font-size:12px">${a.autostart?'(always on while VidQueue starts with Windows)':'(otherwise VidQueue runs hidden and closes itself after Firefox exits)'}</span></p>
     <p><button id="aQuit">Quit VidQueue</button> <span style="color:var(--mut);font-size:12px">Firefox starts it again when needed.</span></p>
-    ${a.update?`<p>Update available: <a href="${esc(a.update.url)}" target="_blank" rel="noopener">VidQueue ${esc(a.update.latest)}</a></p>`:''}
+    <p><button id="aChk">Check for updates</button> <span id="aUpd" style="color:var(--mut);font-size:12px"></span></p>
     <p><a href="${esc(a.repo)}" target="_blank" rel="noopener">${esc(a.repo)}</a></p>`;
   $('aDiag').onclick=()=>copy(`${a.name} ${a.version}\n`+diag);
+  const showUpd=(u,can,cur,err)=>{const el=$('aUpd');
+    if(err){el.textContent=err;return}
+    if(!u){el.textContent=`VidQueue ${cur} is up to date.`;return}
+    el.innerHTML=`VidQueue ${esc(u.latest)} is available. `+(can?'<button id="aUpNow">Update now</button> ':'')+
+      `<a href="${esc(u.url)}" target="_blank" rel="noopener">What's new</a>`;
+    if(can)$('aUpNow').onclick=doUpdate};
+  if(a.update)showUpd(a.update,a.can_update,a.version);
+  $('aChk').onclick=async()=>{const b=$('aChk');b.disabled=true;$('aUpd').textContent='Checking...';
+    try{const r=await api('/api/update/check',{});showUpd(r.update,r.can_install,r.current,r.error)}
+    catch(e){$('aUpd').textContent="Couldn't check: VidQueue isn't responding."}
+    b.disabled=false};
   const syncBoxes=r=>{$('aAuto').checked=r.autostart;$('aTray').checked=r.tray;$('aTray').disabled=r.autostart;
     $('aTrayHint').textContent=r.autostart?'(always on while VidQueue starts with Windows)':'(otherwise VidQueue runs hidden and closes itself after Firefox exits)'};
   $('aAuto').onchange=e=>api('/api/autostart',{on:e.target.checked}).then(syncBoxes);
@@ -143,16 +156,44 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
   b.classList.add('on');$(b.dataset.t).classList.add('on')});
 if(location.hash==='#about')openAbout();
 window.addEventListener('hashchange',()=>{if(location.hash==='#about')openAbout()});
+// one-click update: VidQueue downloads and verifies the release, then its
+// installer closes VidQueue, installs and starts it again; this page waits
+// for the new version to answer and reloads.
+let updWanted=null, updHtml=null;
+async function doUpdate(){
+  let d; try{d=await api('/api/status')}catch(e){return}
+  const u=d.update; if(!u)return;
+  const n=d.jobs.filter(j=>j.status==='running').length;
+  if(!confirm(`Update VidQueue to ${u.latest}?\n\nVidQueue downloads the update, closes, installs it and starts again.`+
+    (n?`\n\n${n} running download${n>1?'s':''} will stop and carry on after the update.`:'')))return;
+  const r=await fetch('/api/update/install',{method:'POST',headers:H,body:'{}'}).then(x=>x.json()).catch(()=>({error:"VidQueue isn't responding."}));
+  if(r.error){alert(r.error);return}
+  updWanted=u.latest; closeAbout(); tick();
+}
+window.doUpdate=doUpdate;
+function setUpd(html){const up=$('upd');up.style.display=html?'block':'none';if(html!==updHtml){updHtml=html;up.innerHTML=html||''}}
+function updBanner(d){
+  const u=d.update, st=(u&&u.state)||{};
+  if(!u)return '';
+  if(st.phase==='downloading')return `Downloading VidQueue ${esc(u.latest)}... ${Math.round((st.progress||0)*100)}%`;
+  if(st.phase==='verifying')return `Checking the VidQueue ${esc(u.latest)} download...`;
+  if(st.phase==='installing')return `Installing VidQueue ${esc(u.latest)}. VidQueue closes and starts again; this page reloads by itself.`;
+  return `VidQueue ${esc(u.latest)} is available.`+(d.can_update?'<button onclick="doUpdate()">Update now</button>':' ')+
+    `<a href="${esc(u.url)}" target="_blank" rel="noopener">What's new</a>`+
+    (st.phase==='error'?`<span class="uerr">The update didn't work: ${esc(st.error)}</span>`:'');
+}
 const order={running:0,queued:1,error:2,cancelled:3,done:4};
 async function act(id,a){await api(`/api/jobs/${id}/${a}`,{});tick()}
 window.act=act;
 async function tick(){
   let d;
   try{d=await api('/api/status');document.getElementById('down').style.display='none'}
-  catch(e){document.getElementById('down').style.display='block';return}
+  catch(e){
+    if(updWanted){setUpd(`Installing VidQueue ${esc(updWanted)}... VidQueue will be back in a moment. If it isn't, look for the "Updating VidQueue" window.`);return}
+    document.getElementById('down').style.display='block';return}
+  if(updWanted&&d.version===updWanted){location.reload();return}
   const s=d.settings, jobs=d.jobs;
-  const up=$('upd');
-  if(d.update){up.style.display='block';up.innerHTML=`VidQueue ${esc(d.update.latest)} is available. <a href="${esc(d.update.url)}" target="_blank" rel="noopener">Download it</a>`}else up.style.display='none';
+  setUpd(updBanner(d));
   const c=k=>jobs.filter(j=>j.status===k).length;
   document.getElementById('sum').textContent=`${c('running')} downloading · ${c('queued')} queued · ${c('done')} done · ${c('error')} failed`;
   document.getElementById("lim").textContent=`max ${s.per_site_limit}/site · ${s.global_limit} total · Firefox ${d.browser?"connected":"not connected"}`+(d.ffmpeg?"":" · ffmpeg missing!");

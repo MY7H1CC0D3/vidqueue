@@ -47,7 +47,10 @@
       if (!raw) return;
       let u;
       try {
-        u = new URL(String(raw).replace(/\\\//g, "/").replace(/\\u0026/gi, "&"), location.href).href;
+        // JSON/HTML escapes: \/ , & and &amp; are "&", and an embedded DASH
+        // manifest ends a URL with </BaseURL (escaped "<")
+        const s = String(raw).replace(/\\\//g, "/").replace(/\\u0026|&amp;/gi, "&").replace(/\\u003c[\s\S]*$/i, "");
+        u = vqNormUrl(new URL(s, location.href).href);
       } catch (e) { return; }
       const kind = vqClassify(u, "");
       if (kind) found.set(u, kind);
@@ -111,6 +114,116 @@
     setTimeout(scan, 1500);
   }
 
+  // ------------------------------------------------ players (popup previews)
+  // Each <video> gets a stable id, and we remember when it started loading or
+  // playing, so the background can tell which player asked for which stream.
+  const vidIds = new WeakMap();
+  const vidEvents = new WeakMap(); // video -> recent event timestamps
+  let nextVid = 0;
+  const vidOf = (v) => {
+    if (!vidIds.has(v)) vidIds.set(v, ++nextVid);
+    return vidIds.get(v);
+  };
+  const byVid = (id) => [...document.querySelectorAll("video")].find((v) => vidIds.get(v) === id);
+  // MSE players (Instagram: blob: src, no poster) can only be told apart by
+  // when their buffer grows: "progress" fires as each fetched piece is appended.
+  const vidFed = new WeakMap(); // video -> recent progress timestamps
+  document.addEventListener("progress", (e) => {
+    const v = e.target;
+    if (!(v instanceof HTMLVideoElement) || !/^blob:/.test(v.currentSrc || "")) return;
+    vidOf(v);
+    const list = vidFed.get(v) || [];
+    list.push(Date.now());
+    vidFed.set(v, list.slice(-40));
+    soonReport();
+  }, true);
+  for (const ev of ["loadstart", "play", "playing", "seeking"]) {
+    document.addEventListener(ev, (e) => {
+      const v = e.target;
+      if (!(v instanceof HTMLVideoElement)) return;
+      vidOf(v);
+      const list = vidEvents.get(v) || [];
+      list.push(Date.now());
+      // keep the first events (when it started loading) as well as the latest:
+      // a player that stalls a lot would otherwise push its loadstart out
+      vidEvents.set(v, list.length > 16 ? [...list.slice(0, 4), ...list.slice(-12)] : list);
+      soonReport();
+    }, true);
+  }
+  // Report players as they appear and play, not only when the popup opens:
+  // X removes players scrolled out of view, and their posters are what lets
+  // the popup show the right preview for those streams later.
+  let reportTimer = null;
+  const soonReport = () => {
+    if (!reportTimer) reportTimer = setTimeout(() => { reportTimer = null; reportVideos(); }, 1000);
+  };
+  new MutationObserver((muts) => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (n.nodeType === 1 && (n.tagName === "VIDEO" || (n.firstElementChild && n.querySelector("video")))) return soonReport();
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  const plainSrc = (v) => {
+    const s = v.currentSrc || v.getAttribute("src") || "";
+    return /^https?:/.test(s) ? s : "";
+  };
+
+  function reportVideos() {
+    if (!document.querySelector("video")) return;
+    const vw = innerWidth, vh = innerHeight;
+    const list = [...document.querySelectorAll("video")].map((v) => {
+      const r = v.getBoundingClientRect();
+      return {
+        vid: vidOf(v),
+        poster: v.poster || "",
+        src: plainSrc(v),
+        events: vidEvents.get(v) || [],
+        fed: vidFed.get(v) || [],
+        playing: !v.paused && !v.ended && v.currentTime > 0,
+        time: v.currentTime || 0,
+        w: Math.round(r.width), h: Math.round(r.height),
+        rect: { x: r.left, y: r.top, w: r.width, h: r.height },
+        inView: r.width > 40 && r.height > 30 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw,
+      };
+    });
+    browser.runtime.sendMessage({ type: "videos", list, vw, vh }).catch(() => {});
+  }
+
+  /** Small preview of one player: a frame grab, else its poster, else where it is on screen. */
+  function thumb(id) {
+    const v = byVid(id);
+    if (!v) return { gone: true };
+    const r = v.getBoundingClientRect();
+    const where = {
+      poster: v.poster || "",
+      rect: { x: r.left, y: r.top, w: r.width, h: r.height },
+      vw: innerWidth,
+      played: v.currentTime > 0,
+      inView: r.width > 40 && r.bottom > 0 && r.top < innerHeight,
+    };
+    if (v.currentTime < 0.2 && v.poster) return where; // nothing decoded yet, the poster is better
+    if (v.readyState >= 2 && v.videoWidth) {
+      try {
+        const c = document.createElement("canvas");
+        c.width = 192;
+        c.height = Math.max(1, Math.round(192 * v.videoHeight / v.videoWidth));
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+        return { ...where, data: c.toDataURL("image/jpeg", 0.75) };
+      } catch (e) { /* cross-origin video without CORS: canvas is tainted */ }
+    }
+    return where;
+  }
+
+  let lit = null;
+  function highlight(id, on, reveal) {
+    if (lit) { lit.el.style.outline = lit.outline; lit.el.style.outlineOffset = lit.offset; lit = null; }
+    const v = on && byVid(id);
+    if (!v) return;
+    lit = { el: v, outline: v.style.outline, offset: v.style.outlineOffset };
+    v.style.outline = "4px solid #2f6fed";
+    v.style.outlineOffset = "-4px";
+    if (reveal) v.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   /** Fetch with the page's own origin/referrer (hls playlists often check them). */
   async function pageFetch(url) {
     // Firefox exposes the page-principal fetch as the content-script global `content`.
@@ -127,6 +240,9 @@
     if (msg.type === "kick") { kick(); return Promise.resolve(true); }
     if (msg.type === "selectionLinks") return Promise.resolve(selectionLinks());
     if (msg.type === "fetchText") return pageFetch(msg.url).then((text) => ({ text }), (e) => ({ error: String(e) }));
+    if (msg.type === "reportVideos") { if (document.querySelector("video")) reportVideos(); return false; }
+    if (msg.type === "thumb") return byVid(msg.vid) ? Promise.resolve(thumb(msg.vid)) : false;
+    if (msg.type === "highlight") { highlight(msg.vid, msg.on, msg.reveal); return false; }
     return false;
   });
 
