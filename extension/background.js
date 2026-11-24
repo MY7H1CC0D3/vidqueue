@@ -838,11 +838,78 @@ browser.menus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// ------------------------------------------------- settings backup in the app
+// Firefox wipes an add-on's storage when it is removed and reinstalled (or a test copy is
+// unloaded), which used to lose the download folder. The app keeps a copy in
+// %LOCALAPPDATA%\VidQueue\extension-settings.json; empty storage is filled back from it.
+const VQ_KEYS = Object.keys(VQ_DEFAULTS);
+let settingsSynced = false, settingsDirty = false;
+async function syncSettings() {
+  try {
+    if (!settingsSynced) {
+      const local = await browser.storage.local.get(VQ_KEYS);
+      if (!Object.keys(local).length) { // nothing stored: fresh install or wiped storage
+        const { settings } = await vqApi("/api/ext-settings", {});
+        const saved = {};
+        for (const k of VQ_KEYS) if (settings && k in settings) saved[k] = settings[k];
+        settingsSynced = true;
+        if (Object.keys(saved).length) await browser.storage.local.set(saved);
+        return;
+      }
+      settingsSynced = true;
+      settingsDirty = true; // storage is the newer copy: back it up
+    }
+    if (settingsDirty) {
+      settingsDirty = false;
+      await vqApi("/api/ext-settings", { settings: await browser.storage.local.get(VQ_KEYS) });
+    }
+  } catch (e) {
+    if (settingsSynced) settingsDirty = true; // app offline: poll() retries
+  }
+}
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !VQ_KEYS.some((k) => k in changes)) return;
+  settingsDirty = true;
+  if (settingsSynced) syncSettings();
+});
+
+// --------------------------------------------- follow the app's version
+// The app's "Update now" can't touch Firefox add-ons, and Firefox only checks for add-on
+// updates about once a day. When the app is newer than this add-on, ask Firefox to check now.
+let updateAskedAt = 0, updateReady = false;
+function vqNewer(a, b) {
+  const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  }
+  return false;
+}
+async function checkAddonUpdate(appVersion) {
+  if (updateReady) return applyAddonUpdate();
+  if (!appVersion || !vqNewer(appVersion, browser.runtime.getManifest().version)) return;
+  if (Date.now() - updateAskedAt < 30 * 60 * 1000) return; // at most every 30 minutes
+  updateAskedAt = Date.now();
+  try { await browser.runtime.requestUpdateCheck(); } catch (e) { /* no update_url / offline */ }
+}
+// Firefox has downloaded the new version: restart into it once no browser download is running
+// (reloading would abort them).
+function applyAddonUpdate() {
+  if (typeof active !== "undefined" && active.size) return;
+  browser.runtime.reload();
+}
+browser.runtime.onUpdateAvailable.addListener(() => { updateReady = true; applyAddonUpdate(); });
+browser.runtime.onInstalled.addListener((d) => {
+  if (d.reason === "update" && d.previousVersion !== browser.runtime.getManifest().version) {
+    notify("VidQueue add-on updated", `Now version ${browser.runtime.getManifest().version}.`);
+  }
+});
+
 // ----------------------------------------------------- status notifications
 const lastStatus = new Map();
 async function poll() {
   try {
     const d = await vqApi("/api/status");
+    checkAddonUpdate(d.version);
     const s = await vqSettings();
     for (const j of d.jobs) {
       const prev = lastStatus.get(j.id);
@@ -853,6 +920,7 @@ async function poll() {
       lastStatus.set(j.id, j.status);
     }
     await flushPending();
+    await syncSettings();
   } catch (e) { /* app offline */ }
 }
 setInterval(poll, 4000);

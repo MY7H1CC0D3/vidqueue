@@ -24,7 +24,7 @@ from pathlib import Path
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 PUBLISHER = "Cannon Technologies"
 GITHUB_REPO = "MY7H1CC0D3/vidqueue"
 HOST, PORT = "127.0.0.1", int(os.environ.get("VIDQUEUE_PORT") or 9666)  # port override for tests
@@ -45,6 +45,7 @@ DATA.mkdir(parents=True, exist_ok=True)
 (DATA / "cookies").mkdir(exist_ok=True)
 JOBS_FILE = DATA / "jobs.json"
 SETTINGS_FILE = DATA / "settings.json"
+EXT_SETTINGS_FILE = DATA / "extension-settings.json"  # backup of the Firefox add-on's options (survives add-on reinstalls)
 
 logging.basicConfig(
     filename=str(DATA / "vidqueue.log"),
@@ -876,6 +877,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 save_settings()
                 wake.set()
                 return self._send(200, {"settings": settings})
+            if path == "/api/ext-settings":
+                # {"settings": {...}} stores the add-on's options; {} reads them back
+                new = body.get("settings")
+                if isinstance(new, dict):
+                    if len(json.dumps(new)) > 65536:
+                        return self._send(400, {"error": "too large"})
+                    with lock:
+                        save_json(EXT_SETTINGS_FILE, new)
+                    return self._send(200, {"ok": True})
+                return self._send(200, {"settings": load_json(EXT_SETTINGS_FILE, {})})
             if path == "/api/autostart":
                 set_autostart(bool(body.get("on")))
                 return self._send(200, {"autostart": autostart_enabled(), "tray": tray_wanted()})
