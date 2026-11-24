@@ -162,6 +162,26 @@
       if (n.nodeType === 1 && (n.tagName === "VIDEO" || (n.firstElementChild && n.querySelector("video")))) return soonReport();
     }
   }).observe(document.documentElement, { childList: true, subtree: true });
+  // Auto-clear (per-site option): tell the background when a big player starts
+  // playing a new source, e.g. an overlay that opens without changing the URL.
+  // The background hides what was found before the click that opened it.
+  let lastMainSrc = null, lastClickSent = 0;
+  document.addEventListener("pointerdown", () => {
+    const now = Date.now();
+    if (now - lastClickSent < 500) return;
+    lastClickSent = now;
+    browser.runtime.sendMessage({ type: "userClick" }).catch(() => {});
+  }, true);
+  document.addEventListener("playing", (e) => {
+    const v = e.target;
+    if (!(v instanceof HTMLVideoElement)) return;
+    const r = v.getBoundingClientRect();
+    const big = r.width >= 320 && r.height >= 180 && r.width * r.height >= 0.12 * innerWidth * innerHeight;
+    const src = v.currentSrc || v.getAttribute("src") || "";
+    if (!big || !src || src === lastMainSrc) return;
+    lastMainSrc = src;
+    browser.runtime.sendMessage({ type: "newPlayer" }).catch(() => {});
+  }, true);
   const plainSrc = (v) => {
     const s = v.currentSrc || v.getAttribute("src") || "";
     return /^https?:/.test(s) ? s : "";

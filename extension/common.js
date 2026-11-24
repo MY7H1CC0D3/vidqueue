@@ -8,6 +8,7 @@ const VQ_DEFAULTS = {
   minSizeMB: 5,            // hide direct files smaller than this
   notify: true,            // desktop notifications on finish/fail
   browserDownload: true,   // Firefox fetches HLS/direct streams itself (needed for Cloudflare CDNs)
+  autoClearSites: [],      // sites where opening a new player hides the streams found before it (overlay players)
 };
 
 async function vqApi(path, body) {

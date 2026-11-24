@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "VidQueue",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Detects videos on web pages and sends them to the local VidQueue app, which downloads them with a per-site concurrency limit.",
   "browser_specific_settings": {
     "gecko": {

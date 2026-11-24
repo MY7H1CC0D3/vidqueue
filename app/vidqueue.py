@@ -24,7 +24,7 @@ from pathlib import Path
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 PUBLISHER = "Cannon Technologies"
 GITHUB_REPO = "MY7H1CC0D3/vidqueue"
 HOST, PORT = "127.0.0.1", int(os.environ.get("VIDQUEUE_PORT") or 9666)  # port override for tests

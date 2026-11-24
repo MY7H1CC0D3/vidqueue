@@ -24,10 +24,11 @@
   </section>
 
   <section>
-    <div class="lbl row"><span>Detected on this page <span id="count"></span></span><span class="sp"></span><a href="#" id="rescan">Rescan</a></div>
+    <div class="lbl row"><span>Detected on this page <span id="count"></span></span><span class="sp"></span><a href="#" id="rescan" title="Look for videos on the page again">Rescan</a>&nbsp;·&nbsp;<a href="#" id="clearList" title="Hide everything found so far; only streams the page loads from now on are listed">Clear</a></div>
     <button id="queueBest" class="primary" disabled>Queue best video</button>
     <div id="items"></div>
-    <label id="showHiddenWrap" class="small" hidden><input type="checkbox" id="showHidden"> show <span id="hiddenCount"></span> filtered (ads, previews, quality variants)</label>
+    <label id="autoClearWrap" class="small" hidden title="For pages that open videos in an overlay without changing the address: when a new player starts, the list is cleared automatically"><input type="checkbox" id="autoClear"> auto-clear when a new player opens on <span id="autoClearSite"></span></label>
+    <label id="showHiddenWrap" class="small" hidden><input type="checkbox" id="showHidden"> show <span id="hiddenCount"></span> filtered (ads, previews, quality variants, cleared)</label>
     <div class="small"><a href="#" id="queuePage">Send page link instead</a> (for sites yt-dlp supports directly)</div>
   </section>
 

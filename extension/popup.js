@@ -10,7 +10,7 @@ function flash(text, err) {
 }
 
 function describe(it) {
-  if (it.kind === "page") return `${it.post.site} ${it.post.label} · video + audio (via yt-dlp)` + (it.hidden ? " · earlier page" : "");
+  if (it.kind === "page") return `${it.post.site} ${it.post.label} · video + audio (via yt-dlp)` + (it.hidden ? (it.hidden === "cleared" ? " · cleared" : " · earlier page") : "");
   const bits = [it.kind === "hls" ? "HLS" : it.kind === "dash" ? "DASH" : "File"];
   if (it.height) bits.push(it.height + "p");
   if (it.duration) bits.push(vqFmtTime(it.duration));
@@ -19,7 +19,7 @@ function describe(it) {
   if (it.pending) bits.push("checking…");
   if (it.drm) bits.push("DRM - can't download");
   if (it.live) bits.push("live");
-  if (it.hidden) bits.push({ short: "too short", small: "too small", variant: "quality variant", track: "video-only / audio-only track", poststream: "raw stream (queue the post instead)", invalid: "not a playlist", stale: "earlier page" }[it.hidden] || it.hidden);
+  if (it.hidden) bits.push({ short: "too short", small: "too small", variant: "quality variant", track: "video-only / audio-only track", poststream: "raw stream (queue the post instead)", invalid: "not a playlist", stale: "earlier page", cleared: "cleared" }[it.hidden] || it.hidden);
   return bits.join(" · ");
 }
 
@@ -46,6 +46,10 @@ async function refresh() {
   $("count").textContent = visible.length ? `(${visible.length})` : "";
   $("showHiddenWrap").hidden = !hidden;
   $("hiddenCount").textContent = hidden;
+  $("autoClearWrap").hidden = !d.site;
+  $("autoClearSite").textContent = d.site;
+  $("autoClear").checked = !!d.autoClear;
+  $("autoClear").dataset.site = d.site || "";
   $("queueBest").disabled = !d.bestId;
   $("queueBest").dataset.id = d.bestId || "";
 
@@ -120,6 +124,13 @@ document.addEventListener("click", async (e) => {
   }
   if (t.id === "resetSession") { await send({ type: "clearSessionDir" }); return refresh(); }
   if (t.id === "rescan") { e.preventDefault(); await send({ type: "rescan", tabId }); flash("Rescanning…"); setTimeout(refresh, 2000); return; }
+  if (t.id === "clearList") {
+    e.preventDefault();
+    await send({ type: "clearTab", tabId });
+    lastSig = "";
+    flash("Cleared. New streams will show up as the page loads them.");
+    return refresh();
+  }
   if (t.id === "queuePage") {
     e.preventDefault();
     const r = await send({ type: "queuePage", tabId });
@@ -139,6 +150,10 @@ document.addEventListener("click", async (e) => {
 });
 
 $("showHidden").addEventListener("change", (e) => { showHidden = e.target.checked; refresh(); });
+$("autoClear").addEventListener("change", async (e) => {
+  await send({ type: "setAutoClear", site: e.target.dataset.site, on: e.target.checked });
+  flash(e.target.checked ? `Auto-clear on for ${e.target.dataset.site}. Open the next video.` : "Auto-clear off.");
+});
 
 // Hovering a row outlines its player on the page.
 let hovered = null;

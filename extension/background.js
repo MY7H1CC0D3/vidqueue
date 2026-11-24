@@ -85,11 +85,37 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     matchVideos(sender.tab.id);
     return false;
   }
+  if (msg.type === "userClick" && sender.tab) { tabState(sender.tab.id).lastClickAt = Date.now(); return false; }
+  if (msg.type === "newPlayer" && sender.tab) { autoClear(sender.tab.id); return false; }
   const h = handlers[msg.type];
   return h ? h(msg, sender) : false;
 });
 
 browser.tabs.onRemoved.addListener((id) => tabsState.delete(id));
+
+/** Auto-clear (sites in autoClearSites): a big player just started a new video, e.g. an
+ *  overlay that opens without changing the URL. Hide everything first seen before the
+ *  click that opened it, except streams still being fetched (the new video's own) and
+ *  the post on screen. Unlike a manual Clear, an auto-cleared stream comes back if a
+ *  playing player turns out to show it. */
+async function autoClear(tabId) {
+  const now = Date.now();
+  const st = tabsState.get(tabId);
+  if (!st) return;
+  let url;
+  try { url = (await browser.tabs.get(tabId)).url; } catch (e) { return; }
+  const { autoClearSites } = await vqSettings();
+  if (!(autoClearSites || []).includes(vqSite(url))) return;
+  const opened = st.lastClickAt && now - st.lastClickAt < 20000 ? st.lastClickAt : now - 2500;
+  const cutoff = opened - 1500;
+  for (const it of st.items.values()) {
+    if (it.cleared || it.url === st.postPage || it.ts >= cutoff) continue;
+    if ((it.hits || []).some((h) => h >= cutoff)) continue;
+    it.cleared = "auto";
+    it.match = null;
+  }
+  updateBadge(tabId);
+}
 
 // Sites like X change pages without loading a new document. When the path
 // changes, hide the previous page's streams (anything older than 2 s: the new
@@ -313,7 +339,7 @@ function compareItems(a, b) {
 function visibleItems(tabId) {
   const st = tabsState.get(tabId);
   if (!st) return [];
-  return [...st.items.values()].filter((i) => !i.hidden && !i.drm && !i.live).sort(compareItems);
+  return [...st.items.values()].filter((i) => !i.hidden && !i.cleared && !i.drm && !i.live).sort(compareItems);
 }
 
 /** The player the user is watching: playing and on screen (largest wins). */
@@ -326,7 +352,7 @@ function pickBest(tabId) {
   const st = tabsState.get(tabId);
   const post = st && st.postPage && st.items.get(st.postPage);
   if (post && !post.hidden) return post; // Instagram/Facebook: the post on screen
-  if (!st || [...st.items.values()].some((i) => i.pending)) return null;
+  if (!st || [...st.items.values()].some((i) => i.pending && !i.cleared)) return null;
   const vis = visibleItems(tabId);
   const focus = focusPlayer(st);
   // pages with several real videos (X threads): the one being watched, not the longest
@@ -452,6 +478,8 @@ function matchVideos(tabId) {
       if (pick || !sure) { item.thumb = null; item.thumbAt = 0; } // a confirmed preview outlives its player
       item.match = pick ? { key, frameId: pick.frameId, vid: pick.vid, how, w: pick.w } : null;
     }
+    // auto-cleared, but a playing player clearly shows it: it's the video being watched
+    if (item.cleared === "auto" && pick && pick.playing && (how === "src" || how === "id")) { item.cleared = false; updateBadge(tabId); }
     // a stream from the previous page that a player here clearly shows is back
     if (item.hidden === "stale" && pick && (how === "src" || how === "id")) item.hidden = item.staleHidden || null;
     // a short clip in a real-size player that is clearly this stream is a real video (X), not an ad
@@ -701,13 +729,16 @@ const handlers = {
       browser.tabs.sendMessage(msg.tabId, { type: "reportVideos" }).catch(() => {});
     }
     if (st) { matchVideos(msg.tabId); ensureThumbs(msg.tabId); }
-    const items = st ? [...st.items.values()].sort(compareItems) : [];
+    const items = st ? [...st.items.values()].sort(compareItems).map((i) => (i.cleared ? { ...i, hidden: "cleared" } : i)) : [];
     const best = pickBest(msg.tabId);
+    let site = "";
+    try { site = vqSite((await browser.tabs.get(msg.tabId)).url); } catch (e) { /* tab gone */ }
+    const { autoClearSites = [] } = await vqSettings();
     let app = null;
     try { app = await vqApi("/api/status"); } catch (e) { /* offline */ }
     const { pending = [] } = await browser.storage.local.get("pending");
     return {
-      items, bestId: best ? best.id : null,
+      items, bestId: best ? best.id : null, site, autoClear: autoClearSites.includes(site),
       folder: await effectiveDir(), sessionDir, defaultDir: (await vqSettings()).defaultDir,
       app: app && {
         running: app.jobs.filter((j) => j.status === "running").length,
@@ -733,6 +764,30 @@ const handlers = {
   async rescan(msg) {
     await browser.tabs.sendMessage(msg.tabId, { type: "scan" }).catch(() => {});
     await browser.tabs.sendMessage(msg.tabId, { type: "kick" }).catch(() => {});
+    return true;
+  },
+  /** "Clear": hide everything found on this tab so far (earlier pages, ads, old variants).
+   *  Items are kept (marked cleared) rather than deleted, so a rescan or the page's own
+   *  scripts finding the same URL again doesn't bring it back; only streams first seen
+   *  after the click show up. Cleared ones stay reachable under "show filtered".
+   *  The Instagram/Facebook post on screen is the page itself, so it stays. */
+  async setAutoClear(msg) {
+    const { autoClearSites = [] } = await vqSettings();
+    const list = autoClearSites.filter((s) => s !== msg.site);
+    if (msg.on && msg.site) list.push(msg.site);
+    await browser.storage.local.set({ autoClearSites: list });
+    return true;
+  },
+  async clearTab(msg) {
+    const st = tabsState.get(msg.tabId);
+    if (!st) return true;
+    for (const it of st.items.values()) {
+      if (it.url === st.postPage) continue;
+      it.cleared = true;
+      it.match = null;
+    }
+    updateBadge(msg.tabId);
+    await browser.tabs.sendMessage(msg.tabId, { type: "highlight", on: false }).catch(() => {});
     return true;
   },
   async highlight(msg) {
